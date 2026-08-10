@@ -16,6 +16,7 @@ realt.by. Зато цена в USD у каждой карточки уже го�
 — конвертация валют не нужна.
 """
 import re
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -45,7 +46,9 @@ def fetch(rooms_values, price_max_usd, price_min_usd=0, currency_per_usd=None, t
     listings = []
     seen_ids = set()
 
-    for rooms in rooms_values:
+    for i, rooms in enumerate(rooms_values):
+        if i > 0:
+            time.sleep(0.5)  # не долбим сайт подряд, чтобы не словить анти-бот блокировку
         url = FILTER_URL_TMPL.format(rooms=rooms, price_byn=price_byn)
         resp = requests.get(url, headers=HEADERS, timeout=timeout)
         resp.raise_for_status()

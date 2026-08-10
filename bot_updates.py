@@ -48,8 +48,9 @@ def _save_offset(path, offset):
     path.write_text(json.dumps({"offset": offset}), encoding="utf-8")
 
 
-def process_updates(token, offset_path, store, watchlist_state_path, currency_per_usd=None):
+def process_updates(token, offset_path, store, watchlist_state_path, currency_per_usd=None, allowed_chat_ids=None):
     currency_per_usd = currency_per_usd or {}
+    allowed_chat_ids = {str(chat_id) for chat_id in (allowed_chat_ids or [])}
     offset = _load_offset(offset_path)
     # Без явного timeout getUpdates не блокируется в ожидании новых
     # апдейтов — сразу возвращает то, что уже накопилось. Долгий
@@ -63,7 +64,7 @@ def process_updates(token, offset_path, store, watchlist_state_path, currency_pe
         if not callback:
             continue
         try:
-            _handle_callback(token, callback, store, watchlist_state_path, currency_per_usd)
+            _handle_callback(token, callback, store, watchlist_state_path, currency_per_usd, allowed_chat_ids)
         except Exception:
             log.exception("failed to handle callback_query %s", callback.get("id"))
 
@@ -71,7 +72,7 @@ def process_updates(token, offset_path, store, watchlist_state_path, currency_pe
         _save_offset(offset_path, max_update_id + 1)
 
 
-def _handle_callback(token, callback, store, watchlist_state_path, currency_per_usd):
+def _handle_callback(token, callback, store, watchlist_state_path, currency_per_usd, allowed_chat_ids):
     data = callback.get("data") or ""
     callback_id = callback["id"]
     parts = data.split(":", 2)
@@ -80,9 +81,18 @@ def _handle_callback(token, callback, store, watchlist_state_path, currency_per_
         _call(token, "answerCallbackQuery", callback_query_id=callback_id)
         return
 
-    action, source, listing_id = parts
     message = callback.get("message") or {}
     chat_id = (message.get("chat") or {}).get("id")
+
+    # Сообщения с инлайн-кнопками можно переслать в другой чат — кнопка
+    # при этом останется рабочей. Не даём управлять watchlist никому, кроме
+    # адресатов из TELEGRAM_CHAT_IDS.
+    if chat_id is None or str(chat_id) not in allowed_chat_ids:
+        log.warning("ignoring track/untrack callback from unauthorized chat_id=%s", chat_id)
+        _call(token, "answerCallbackQuery", callback_query_id=callback_id)
+        return
+
+    action, source, listing_id = parts
     message_id = message.get("message_id")
 
     if action == "track":

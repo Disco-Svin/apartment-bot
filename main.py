@@ -137,20 +137,20 @@ def run_once(config, store, notifier):
         if store.is_new(listing.source, listing.listing_id)
     ]
     to_notify = [listing for listing in new_listings if listing.source not in bootstrap_sources]
+    to_notify_keys = {(listing.source, listing.listing_id) for listing in to_notify}
 
+    # Помечаем "видели" сразу для всего, что не требует уведомления
+    # (bootstrap-срез и уже виденные объявления). Объявления из to_notify
+    # помечаются только после успешной отправки (см. ниже) — иначе сбой
+    # Telegram API безвозвратно "съедал" бы уведомление: оно уже считалось
+    # бы отправленным и больше никогда не попало бы в to_notify.
     for listing in filtered:
-        store.mark_seen(listing.source, listing.listing_id, listing.url, listing.title)
+        if (listing.source, listing.listing_id) not in to_notify_keys:
+            store.mark_seen(listing.source, listing.listing_id, listing.url, listing.title)
     store.save()
 
-    log.info(
-        "fetched=%d filtered=%d new=%d notify=%d bootstrap=%s",
-        len(all_listings),
-        len(filtered),
-        len(new_listings),
-        len(to_notify),
-        sorted(bootstrap_sources) or "-",
-    )
-
+    sent = 0
+    failed = 0
     for listing in to_notify:
         # Кнопка отслеживания цены есть только там, где реально можно
         # заново опросить конкретное объявление (см. watchlist.FETCHERS) —
@@ -164,8 +164,26 @@ def run_once(config, store, notifier):
             notifier.send(format_message(listing), reply_markup=keyboard)
         except Exception:
             log.exception("failed to send notification for %s", listing.url)
+            failed += 1
         else:
+            # Помечаем и сохраняем сразу после успешной отправки, а не в
+            # конце всего цикла — если процесс упадёт на середине рассылки,
+            # уже отправленные объявления не продублируются на следующем прогоне.
+            store.mark_seen(listing.source, listing.listing_id, listing.url, listing.title)
+            store.save()
+            sent += 1
             time.sleep(1.2)  # не упираемся в лимиты Telegram API
+
+    log.info(
+        "fetched=%d filtered=%d new=%d notify=%d sent=%d failed=%d bootstrap=%s",
+        len(all_listings),
+        len(filtered),
+        len(new_listings),
+        len(to_notify),
+        sent,
+        failed,
+        sorted(bootstrap_sources) or "-",
+    )
 
 
 def parse_chat_ids(raw):
@@ -186,6 +204,7 @@ def run_cycle(config, store, notifier):
             store,
             BASE_DIR / "data" / "watchlist_state.json",
             currency_per_usd,
+            notifier.chat_ids,
         )
     except Exception:
         log.exception("process_updates failed")

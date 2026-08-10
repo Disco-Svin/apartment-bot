@@ -23,10 +23,10 @@ from sources import domovita, kufar, onliner, realt
 log = logging.getLogger("apartment-bot")
 
 SOURCE_PATTERNS = [
-    (re.compile(r"re\.kufar\.by/vi/\d+"), "kufar"),
-    (re.compile(r"r\.onliner\.by/pk/apartments/\d+"), "onliner"),
-    (re.compile(r"realt\.by/sale-flats/object/\d+"), "realt"),
-    (re.compile(r"domovita\.by/"), "domovita"),
+    (re.compile(r"^https?://re\.kufar\.by/vi/\d+"), "kufar"),
+    (re.compile(r"^https?://r\.onliner\.by/pk/apartments/\d+"), "onliner"),
+    (re.compile(r"^https?://realt\.by/sale-flats/object/\d+"), "realt"),
+    (re.compile(r"^https?://domovita\.by/"), "domovita"),
 ]
 
 FETCHERS = {

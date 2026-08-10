@@ -15,6 +15,7 @@ domovita.by — раздел продажи квартир в Минске.
 """
 import json
 import re
+import time
 
 import requests
 
@@ -39,6 +40,8 @@ def fetch(rooms_values, price_max_usd, price_min_usd=0, pages=2, timeout=25):
     seen_ids = set()
 
     for page in range(1, pages + 1):
+        if page > 1:
+            time.sleep(0.5)  # не долбим сайт подряд, чтобы не словить анти-бот блокировку
         params = [("rooms", rooms) for rooms in rooms_values]
         if page > 1:
             params.append(("page", page))

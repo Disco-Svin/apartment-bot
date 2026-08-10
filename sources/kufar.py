@@ -9,6 +9,7 @@ Kufar.by — раздел недвижимости (re.kufar.by), категор
 """
 import json
 import re
+import time
 
 import requests
 
@@ -37,7 +38,9 @@ def fetch(rooms_values, price_max_usd, price_min_usd=0, limit_per_room=30, timeo
     listings = []
     seen_ids = set()
 
-    for rooms in rooms_values:
+    for i, rooms in enumerate(rooms_values):
+        if i > 0:
+            time.sleep(0.5)  # не долбим API подряд, чтобы не словить анти-бот блокировку
         params = {
             "cat": CATEGORY_APARTMENTS,
             "typ": "sell",
