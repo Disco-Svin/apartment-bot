@@ -142,18 +142,23 @@ def run_once(config, store, notifier):
             time.sleep(1.2)  # не упираемся в лимиты Telegram API
 
 
+def parse_chat_ids(raw):
+    return [chat_id.strip() for chat_id in raw.split(",") if chat_id.strip()]
+
+
 def main():
     load_dotenv(BASE_DIR / ".env")
     config = load_config()
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
-        log.error("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID не заданы — создайте .env по образцу .env.example")
+    chat_ids_raw = os.environ.get("TELEGRAM_CHAT_IDS")
+    chat_ids = parse_chat_ids(chat_ids_raw) if chat_ids_raw else []
+    if not token or not chat_ids:
+        log.error("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_IDS не заданы — создайте .env по образцу .env.example")
         sys.exit(1)
 
     store = SeenStore(str(BASE_DIR / "data" / "seen.json"))
-    notifier = TelegramNotifier(token, chat_id)
+    notifier = TelegramNotifier(token, chat_ids)
     run_once(config, store, notifier)
 
 
