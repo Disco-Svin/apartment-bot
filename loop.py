@@ -13,7 +13,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from main import load_config, log, parse_chat_ids, run_once
+from main import load_config, log, parse_chat_ids, run_cycle
 from notifier import TelegramNotifier
 from storage import SeenStore
 
@@ -37,9 +37,9 @@ def main():
         interval = config.get("poll_interval_seconds", 900)
 
         try:
-            run_once(config, store, notifier)
+            run_cycle(config, store, notifier)
         except Exception:
-            log.exception("run_once failed, will retry next cycle")
+            log.exception("run_cycle failed, will retry next cycle")
 
         log.info("sleeping for %d seconds", interval)
         time.sleep(interval)

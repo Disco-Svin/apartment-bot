@@ -66,14 +66,34 @@ def fetch(rooms_values, price_max_usd, price_min_usd=0, pages=2, timeout=25):
                 continue
             seen_ids.add(listing_id)
 
-            listing = _parse_item(item, price_min_usd, price_max_usd)
-            if listing is not None:
+            listing = _build_listing(item)
+            if listing is not None and price_min_usd <= listing.price_usd <= price_max_usd:
                 listings.append(listing)
 
     return listings
 
 
-def _parse_item(item, price_min_usd, price_max_usd):
+def fetch_one(url, timeout=25):
+    """Забирает актуальные данные одного объявления по прямой ссылке —
+    используется для отслеживания цены (watchlist.py). У domovita.by
+    ссылка строится из человекочитаемого адреса, а не из числового id,
+    поэтому (в отличие от других источников) нужен именно полный URL."""
+    resp = requests.get(url, headers=HEADERS, timeout=timeout)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+
+    match = NEXT_DATA_RE.search(resp.text)
+    if not match:
+        return None
+    data = json.loads(match.group(1))
+    obj = data.get("props", {}).get("pageProps", {}).get("objectData")
+    if not obj:
+        return None
+    return _build_listing(obj)
+
+
+def _build_listing(item):
     price_history = item.get("price_history") or []
     price_usd = None
     if price_history:
@@ -84,8 +104,6 @@ def _parse_item(item, price_min_usd, price_max_usd):
     try:
         price_usd = float(price_usd)
     except (TypeError, ValueError):
-        return None
-    if not (price_min_usd <= price_usd <= price_max_usd):
         return None
 
     url = item.get("url")

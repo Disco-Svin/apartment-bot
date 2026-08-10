@@ -7,11 +7,18 @@ Kufar.by — раздел недвижимости (re.kufar.by), категор
 Фильтр по нескольким значениям комнатности одновременно (rms=2,3) не
 работает надёжно, поэтому запрашиваем каждое значение отдельно.
 """
+import json
+import re
+
 import requests
 
 from .base import Listing
 
 API_URL = "https://api.kufar.by/search-api/v2/search/rendered-paginated"
+AD_URL_RE = re.compile(r"/vi/(\d+)")
+NEXT_DATA_RE = re.compile(
+    r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.S
+)
 
 HEADERS = {
     "User-Agent": (
@@ -54,6 +61,33 @@ def fetch(rooms_values, price_max_usd, price_min_usd=0, limit_per_room=30, timeo
             listings.append(_parse_ad(ad))
 
     return listings
+
+
+def fetch_one(url_or_id, timeout=20):
+    """Забирает актуальные данные одного объявления по ссылке или ad_id —
+    используется для отслеживания цены (watchlist.py), а не общего поиска.
+    Страница объявления встраивает тот же JSON, что и поисковое API."""
+    ad_id = str(url_or_id)
+    if not ad_id.isdigit():
+        match = AD_URL_RE.search(ad_id)
+        if not match:
+            return None
+        ad_id = match.group(1)
+
+    resp = requests.get(f"https://re.kufar.by/vi/{ad_id}", headers=HEADERS, timeout=timeout)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+
+    match = NEXT_DATA_RE.search(resp.text)
+    if not match:
+        return None
+    data = json.loads(match.group(1))
+    try:
+        ad = data["props"]["initialState"]["adView"]["data"]["initial"]
+    except (KeyError, TypeError):
+        return None
+    return _parse_ad(ad)
 
 
 def _parse_ad(ad):

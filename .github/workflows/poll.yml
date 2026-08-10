@@ -38,6 +38,6 @@ jobs:
         run: |
           git config user.name "apartment-bot"
           git config user.email "apartment-bot@users.noreply.github.com"
-          git add data/seen.json
+          git add data/
           git diff --cached --quiet || git commit -m "Update seen listings"
           git push

@@ -23,7 +23,9 @@ import requests
 from .base import Listing
 
 SEARCH_URL = "https://realt.by/sale/flats/"
+DETAIL_URL = "https://realt.by/sale-flats/object/{code}/"
 TOWN_UUID_MINSK = "4cb07174-7b00-11eb-8943-0cc47adabd66"
+DETAIL_URL_RE = re.compile(r"/object/(\d+)")
 
 HEADERS = {
     "User-Agent": (
@@ -72,31 +74,64 @@ def fetch(rooms_values, price_max_usd, price_min_usd=0, currency_per_usd=None, t
         if rooms not in rooms_set:
             continue
 
-        price_usd = _to_usd(obj.get("price"), obj.get("priceCurrency"), currency_per_usd)
-        if price_usd is None:
+        listing = _build_listing(obj, currency_per_usd)
+        if listing is None:
             continue
-        if not (price_min_usd <= price_usd <= price_max_usd):
-            continue
-
-        code = obj.get("code")
-        if code is None:
+        if not (price_min_usd <= listing.price_usd <= price_max_usd):
             continue
 
-        listings.append(
-            Listing(
-                source="realt",
-                listing_id=str(code),
-                url=f"https://realt.by/sale-flats/object/{code}/",
-                title=obj.get("title") or f"{rooms}-комн. квартира",
-                price_usd=price_usd,
-                rooms=rooms,
-                area_total=obj.get("areaTotal"),
-                address=obj.get("address") or "Минск",
-                created_at=obj.get("createdAt"),
-            )
-        )
+        listings.append(listing)
 
     return listings
+
+
+def fetch_one(url_or_code, currency_per_usd=None, timeout=25):
+    """Забирает актуальные данные одного объявления по ссылке или code —
+    используется для отслеживания цены (watchlist.py). Страница
+    объявления встраивает тот же JSON, что и страница поиска."""
+    code = str(url_or_code)
+    if not code.isdigit():
+        match = DETAIL_URL_RE.search(code)
+        if not match:
+            return None
+        code = match.group(1)
+
+    resp = requests.get(DETAIL_URL.format(code=code), headers=HEADERS, timeout=timeout)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+
+    match = NEXT_DATA_RE.search(resp.text)
+    if not match:
+        return None
+    data = json.loads(match.group(1))
+    obj = data.get("props", {}).get("pageProps", {}).get("object")
+    if not obj:
+        return None
+    return _build_listing(obj, currency_per_usd or {})
+
+
+def _build_listing(obj, currency_per_usd):
+    price_usd = _to_usd(obj.get("price"), obj.get("priceCurrency"), currency_per_usd)
+    if price_usd is None:
+        return None
+
+    code = obj.get("code")
+    if code is None:
+        return None
+
+    rooms = obj.get("rooms")
+    return Listing(
+        source="realt",
+        listing_id=str(code),
+        url=DETAIL_URL.format(code=code),
+        title=obj.get("title") or f"{rooms}-комн. квартира",
+        price_usd=price_usd,
+        rooms=rooms,
+        area_total=obj.get("areaTotal"),
+        address=obj.get("address") or "Минск",
+        created_at=obj.get("createdAt"),
+    )
 
 
 def _to_usd(price, currency_code, currency_per_usd):

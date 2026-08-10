@@ -9,8 +9,9 @@ import yaml
 from dotenv import load_dotenv
 
 from notifier import TelegramNotifier
-from sources import domovita, kufar, onliner, realt
+from sources import domovita, gohome, kufar, onliner, realt, t_s
 from storage import SeenStore
+from watchlist import check_watchlist
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -33,6 +34,18 @@ SOURCE_FETCHERS = {
         filters.get("price_min_usd", 0),
         pages=cfg.get("domovita", {}).get("fetch_pages", 2),
     ),
+    "gohome": lambda cfg, filters: gohome.fetch(
+        filters["rooms"],
+        filters["price_max_usd"],
+        filters.get("price_min_usd", 0),
+        filters.get("currency_per_usd", {}),
+    ),
+    "t_s": lambda cfg, filters: t_s.fetch(
+        filters["rooms"],
+        filters["price_max_usd"],
+        filters.get("price_min_usd", 0),
+        filters.get("currency_per_usd", {}),
+    ),
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -54,6 +67,8 @@ def format_message(listing):
         "onliner": "Onliner",
         "realt": "Realt.by",
         "domovita": "Domovita",
+        "gohome": "GoHome.by",
+        "t_s": "Твоя Столица",
     }
 
     title = html.escape(listing.title)
@@ -146,6 +161,19 @@ def parse_chat_ids(raw):
     return [chat_id.strip() for chat_id in raw.split(",") if chat_id.strip()]
 
 
+def run_cycle(config, store, notifier):
+    """Один полный цикл: поиск новых объявлений + проверка watchlist на
+    изменение цены. И loop.py, и main.py вызывают именно это, чтобы не
+    держать эту связку в двух местах."""
+    run_once(config, store, notifier)
+    check_watchlist(
+        BASE_DIR / "watchlist.yaml",
+        BASE_DIR / "data" / "watchlist_state.json",
+        notifier,
+        config.get("filters", {}).get("currency_per_usd", {}),
+    )
+
+
 def main():
     load_dotenv(BASE_DIR / ".env")
     config = load_config()
@@ -159,7 +187,7 @@ def main():
 
     store = SeenStore(str(BASE_DIR / "data" / "seen.json"))
     notifier = TelegramNotifier(token, chat_ids)
-    run_once(config, store, notifier)
+    run_cycle(config, store, notifier)
 
 
 if __name__ == "__main__":

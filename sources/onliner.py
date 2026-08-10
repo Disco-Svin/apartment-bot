@@ -4,11 +4,15 @@ r.onliner.by — сервис "Купить квартиру" от Onliner (не
 и сортировкой по дате создания на сервере — самый удобный из четырёх
 источников.
 """
+import re
+
 import requests
 
 from .base import Listing
 
 API_URL = "https://r.onliner.by/sdapi/pk.api/search/apartments"
+ITEM_URL = "https://r.onliner.by/sdapi/pk.api/apartments/{id}"
+DETAIL_URL_RE = re.compile(r"/apartments/(\d+)")
 
 HEADERS = {
     "Accept": "application/json",
@@ -53,6 +57,23 @@ def fetch(rooms_values, price_max_usd, price_min_usd=0, limit=50, timeout=20):
         if listing is not None:
             listings.append(listing)
     return listings
+
+
+def fetch_one(url_or_id, timeout=20):
+    """Забирает актуальные данные одной квартиры по ссылке или id —
+    используется для отслеживания цены (watchlist.py)."""
+    apartment_id = str(url_or_id)
+    if not apartment_id.isdigit():
+        match = DETAIL_URL_RE.search(apartment_id)
+        if not match:
+            return None
+        apartment_id = match.group(1)
+
+    resp = requests.get(ITEM_URL.format(id=apartment_id), headers=HEADERS, timeout=timeout)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return _parse_apartment(resp.json())
 
 
 def _parse_apartment(a):
