@@ -1,0 +1,43 @@
+name: Poll apartment listings
+
+on:
+  schedule:
+    # GitHub может слегка задерживать запуск при высокой нагрузке на
+    # платформу — фактический интервал бывает 15-20 минут вместо 15.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+# Нужно право на запись, чтобы закоммитить обновлённый data/seen.json
+# (список уже отправленных объявлений) обратно в репозиторий.
+permissions:
+  contents: write
+
+concurrency:
+  group: poll-apartment-listings
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run poll
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py
+
+      - name: Commit updated seen-listings state
+        run: |
+          git config user.name "apartment-bot"
+          git config user.email "apartment-bot@users.noreply.github.com"
+          git add data/seen.json
+          git diff --cached --quiet || git commit -m "Update seen listings"
+          git push
