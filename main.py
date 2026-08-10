@@ -8,9 +8,12 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+from bot_updates import process_updates
+from keyboards import track_button
 from notifier import TelegramNotifier
 from sources import domovita, gohome, kufar, onliner, realt, t_s
 from storage import SeenStore
+from watchlist import FETCHERS as WATCHLIST_FETCHERS
 from watchlist import check_watchlist
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -136,7 +139,7 @@ def run_once(config, store, notifier):
     to_notify = [listing for listing in new_listings if listing.source not in bootstrap_sources]
 
     for listing in filtered:
-        store.mark_seen(listing.source, listing.listing_id)
+        store.mark_seen(listing.source, listing.listing_id, listing.url, listing.title)
     store.save()
 
     log.info(
@@ -149,8 +152,16 @@ def run_once(config, store, notifier):
     )
 
     for listing in to_notify:
+        # Кнопка отслеживания цены есть только там, где реально можно
+        # заново опросить конкретное объявление (см. watchlist.FETCHERS) —
+        # у gohome.by и t-s.by такой возможности пока нет.
+        keyboard = (
+            track_button(listing.source, listing.listing_id, tracking=False)
+            if listing.source in WATCHLIST_FETCHERS
+            else None
+        )
         try:
-            notifier.send(format_message(listing))
+            notifier.send(format_message(listing), reply_markup=keyboard)
         except Exception:
             log.exception("failed to send notification for %s", listing.url)
         else:
@@ -162,15 +173,29 @@ def parse_chat_ids(raw):
 
 
 def run_cycle(config, store, notifier):
-    """Один полный цикл: поиск новых объявлений + проверка watchlist на
+    """Один полный цикл: обработка нажатий кнопок "Отслеживать" за время
+    с прошлого прогона → поиск новых объявлений → проверка watchlist на
     изменение цены. И loop.py, и main.py вызывают именно это, чтобы не
     держать эту связку в двух местах."""
+    currency_per_usd = config.get("filters", {}).get("currency_per_usd", {})
+
+    try:
+        process_updates(
+            notifier.token,
+            BASE_DIR / "data" / "telegram_offset.json",
+            store,
+            BASE_DIR / "data" / "watchlist_state.json",
+            currency_per_usd,
+        )
+    except Exception:
+        log.exception("process_updates failed")
+
     run_once(config, store, notifier)
     check_watchlist(
         BASE_DIR / "watchlist.yaml",
         BASE_DIR / "data" / "watchlist_state.json",
         notifier,
-        config.get("filters", {}).get("currency_per_usd", {}),
+        currency_per_usd,
     )
 
 
